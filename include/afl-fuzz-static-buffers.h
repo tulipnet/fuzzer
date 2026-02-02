@@ -1,0 +1,22 @@
+#ifndef AFL_STATIC_BUFFERS_H
+#define AFL_STATIC_BUFFERS_H
+
+#include <stddef.h>
+
+#include "config.h"
+
+extern char* wrapper_input_buffer;
+extern char* wrapper_input_buffer2;
+extern size_t wrapper_input_buffers_max_size;
+extern size_t wrapper_input_buffers_size;
+extern struct wildcard* global_current_wildcard;
+extern char filename_buffer[STATIC_FILENAME_BUFFER_SIZE];
+extern char filename_buffer2[STATIC_FILENAME_BUFFER_SIZE];
+extern char get_full_path_of_the_first_file_that_matches_the_path_buffer[AFL_MAX_STATIC_BUFFER_SIZE];
+extern char get_path_without_the_last_part_buffer[STATIC_FILENAME_BUFFER_SIZE];
+extern char get_associated_wildcard_name_from_queue_entry_path_buffer[STATIC_FILENAME_BUFFER_SIZE];
+extern char save_if_interesting_sourceFileDir_buffer[AFL_MAX_STATIC_BUFFER_SIZE];
+extern char save_if_interesting_sourceFilePath_buffer[AFL_MAX_STATIC_BUFFER_SIZE];
+extern char fuzz_one_original_in_buf_cpy[AFL_MAX_STATIC_BUFFER_SIZE];
+
+#endif

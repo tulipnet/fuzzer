@@ -1,0 +1,2595 @@
+diff --git a/GNUmakefile b/GNUmakefile
+index 6605c25c..f87a9cfb 100644
+--- a/GNUmakefile
++++ b/GNUmakefile
+@@ -484,8 +484,12 @@ src/afl-forkserver.o: $(COMM_HDR) src/afl-forkserver.c
+ src/afl-sharedmem.o: $(COMM_HDR) src/afl-sharedmem.c include/android-ashmem.h include/cmplog.h
+ 	$(CC) $(CFLAGS) $(CFLAGS_FLTO) $(SPECIAL_PERFORMANCE) -c src/afl-sharedmem.c -o src/afl-sharedmem.o
+ 
+-afl-fuzz: $(COMM_HDR) include/afl-fuzz.h $(AFL_FUZZ_FILES) src/afl-common.o src/afl-sharedmem.o src/afl-forkserver.o src/afl-performance.o include/cmplog.h include/envs.h | test_x86
+-	$(CC) $(CFLAGS) $(COMPILE_STATIC) $(CFLAGS_FLTO) $(SPECIAL_PERFORMANCE) $(AFL_FUZZ_FILES) src/afl-common.o src/afl-sharedmem.o src/afl-forkserver.o src/afl-performance.o -o $@ $(PYFLAGS) $(LDFLAGS) -lm
++wildcard-wrapper/wrapper_final.o :
++	cd wildcard-wrapper && DEBUG=1 make wrapper
++
++afl-fuzz: $(COMM_HDR) include/afl-fuzz.h $(AFL_FUZZ_FILES) src/afl-common.o src/afl-sharedmem.o src/afl-forkserver.o src/afl-performance.o wildcard-wrapper/wrapper_final.o | test_x86
++	$(CC) $(CFLAGS) $(COMPILE_STATIC) $(CFLAGS_FLTO) $(SPECIAL_PERFORMANCE) $(AFL_FUZZ_FILES) src/afl-common.o src/afl-sharedmem.o src/afl-forkserver.o src/afl-performance.o wildcard-wrapper/wrapper_final.o -o $@ $(PYFLAGS) $(LDFLAGS) -lm
++
+ ifdef IS_IOS
+ 	@ldid -Sentitlements.plist $@ && echo "[+] Signed $@" || { echo "[-] Failed to sign $@"; }
+ endif
+diff --git a/README.md b/README.md
+index b8c2d95e..c567c84f 100644
+--- a/README.md
++++ b/README.md
+@@ -1,261 +1,3 @@
+-# American Fuzzy Lop plus plus (AFL++)
++# American Fuzzy Lop plus plus (AFL++) augmented version for Tulip
+ 
+-<img align="right" src="https://raw.githubusercontent.com/AFLplusplus/Website/main/static/aflpp_bg.svg" alt="AFL++ logo" width="250" height="250">
+-
+-Release version: [4.32c](https://github.com/AFLplusplus/AFLplusplus/releases)
+-
+-GitHub version: 4.32c
+-
+-Repository:
+-[https://github.com/AFLplusplus/AFLplusplus](https://github.com/AFLplusplus/AFLplusplus)
+-
+-AFL++ is maintained by:
+-
+-* Marc "van Hauser" Heuse <mh@mh-sec.de>
+-* Dominik Maier <mail@dmnk.co>
+-* Andrea Fioraldi <andreafioraldi@gmail.com>
+-* Heiko "hexcoder-" Eissfeldt <heiko.eissfeldt@hexco.de>
+-* frida_mode is maintained by @Worksbutnottested
+-
+-Originally developed by Michal "lcamtuf" Zalewski.
+-
+-AFL++ is a superior fork to Google's AFL - more speed, more and better
+-mutations, more and better instrumentation, custom module support, etc.
+-
+-You are free to copy, modify, and distribute AFL++ with attribution under the
+-terms of the Apache-2.0 License. See the [LICENSE](LICENSE) for details.
+-
+-## Getting started
+-
+-Here is some information to get you started:
+-
+-* For an overview of the AFL++ documentation and a very helpful graphical guide,
+-  please visit [docs/README.md](docs/README.md).
+-* To get you started with tutorials, go to
+-  [docs/tutorials.md](docs/tutorials.md).
+-* For releases, see the
+-  [Releases tab](https://github.com/AFLplusplus/AFLplusplus/releases) and
+-  [branches](#branches). The best branches to use are, however, `stable` or
+-  `dev` - depending on your risk appetite. Also take a look at the list of
+-  [important changes in AFL++](docs/important_changes.md) and the list of
+-  [features](docs/features.md).
+-* If you want to use AFL++ for your academic work, check the
+-  [papers page](https://aflplus.plus/papers/) on the website.
+-* To cite our work, look at the [Cite](#cite) section.
+-* For comparisons, use the fuzzbench `aflplusplus` setup, or use
+-  `afl-clang-fast` with `AFL_LLVM_CMPLOG=1`. You can find the `aflplusplus`
+-  default configuration on Google's
+-  [fuzzbench](https://github.com/google/fuzzbench/tree/master/fuzzers/aflplusplus).
+-
+-## Building and installing AFL++
+-
+-To have AFL++ easily available with everything compiled, pull the image directly
+-from the Docker Hub (available for both x86_64 and arm64):
+-
+-```shell
+-docker pull aflplusplus/aflplusplus
+-docker run -ti -v /location/of/your/target:/src aflplusplus/aflplusplus
+-```
+-
+-This image is automatically published when a push to the stable branch happens
+-(see [branches](#branches)). If you use the command above, you will find your
+-target source code in `/src` in the container.
+-
+-Note: you can also pull `aflplusplus/aflplusplus:dev` which is the most current
+-development state of AFL++.
+-
+-To build AFL++ yourself - *which we recommend* - continue at
+-[docs/INSTALL.md](docs/INSTALL.md).
+-
+-## Quick start: Fuzzing with AFL++
+-
+-*NOTE: Before you start, please read about the
+-[common sense risks of fuzzing](docs/fuzzing_in_depth.md#0-common-sense-risks).*
+-
+-This is a quick start for fuzzing targets with the source code available. To
+-read about the process in detail, see
+-[docs/fuzzing_in_depth.md](docs/fuzzing_in_depth.md).
+-
+-To learn about fuzzing other targets, see:
+-* Binary-only targets:
+-  [docs/fuzzing_binary-only_targets.md](docs/fuzzing_binary-only_targets.md)
+-* Network services:
+-  [docs/best_practices.md#fuzzing-a-network-service](docs/best_practices.md#fuzzing-a-network-service)
+-* GUI programs:
+-  [docs/best_practices.md#fuzzing-a-gui-program](docs/best_practices.md#fuzzing-a-gui-program)
+-
+-Step-by-step quick start:
+-
+-1. Compile the program or library to be fuzzed using `afl-cc`. A common way to
+-   do this would be:
+-
+-   ```
+-   CC=/path/to/afl-cc CXX=/path/to/afl-c++ ./configure --disable-shared
+-   make clean all
+-   ```
+-
+-2. Get a small but valid input file that makes sense to the program. When
+-   fuzzing verbose syntax (SQL, HTTP, etc.), create a dictionary as described in
+-   [dictionaries/README.md](dictionaries/README.md), too.
+-
+-3. If the program reads from stdin, run `afl-fuzz` like so:
+-
+-   ```
+-   ./afl-fuzz -i seeds_dir -o output_dir -- \
+-   /path/to/tested/program [...program's cmdline...]
+-   ```
+-
+-   To add a dictionary, add `-x /path/to/dictionary.txt` to afl-fuzz.
+-
+-   If the program takes input from a file, you can put `@@` in the program's
+-   command line; AFL++ will put an auto-generated file name in there for you.
+-
+-4. Investigate anything shown in red in the fuzzer UI by promptly consulting
+-   [docs/afl-fuzz_approach.md#understanding-the-status-screen](docs/afl-fuzz_approach.md#understanding-the-status-screen).
+-
+-5. You will find found crashes and hangs in the subdirectories `crashes/` and
+-   `hangs/` in the `-o output_dir` directory. You can replay the crashes by
+-   feeding them to the target, e.g. if your target is using stdin:
+-
+-   ```
+-   cat output_dir/crashes/id:000000,* | /path/to/tested/program [...program's cmdline...]
+-   ```
+-
+-   You can generate cores or use gdb directly to follow up the crashes.
+-
+-6. We cannot stress this enough - if you want to fuzz effectively, read the
+-   [docs/fuzzing_in_depth.md](docs/fuzzing_in_depth.md) document!
+-
+-## Contact
+-
+-Questions? Concerns? Bug reports?
+-
+-* The contributors can be reached via (e.g., by creating an issue):
+-  [https://github.com/AFLplusplus/AFLplusplus](https://github.com/AFLplusplus/AFLplusplus).
+-* Take a look at our [FAQ](docs/FAQ.md). If you find an interesting or important
+-  question missing, submit it via
+-  [https://github.com/AFLplusplus/AFLplusplus/discussions](https://github.com/AFLplusplus/AFLplusplus/discussions).
+-* Best: join the [Awesome Fuzzing](https://discord.gg/gCraWct) Discord server.
+-* There is a (not really used) mailing list for the AFL/AFL++ project
+-  ([browse archive](https://groups.google.com/group/afl-users)). To compare
+-  notes with other users or to get notified about major new features, send an
+-  email to <afl-users+subscribe@googlegroups.com>, but note that this is not
+-  managed by us.
+-
+-## Branches
+-
+-The following branches exist:
+-
+-* [release](https://github.com/AFLplusplus/AFLplusplus/tree/release): the latest
+-  release
+-* [stable/trunk](https://github.com/AFLplusplus/AFLplusplus/): stable state of
+-  AFL++ - it is synced from dev from time to time when we are satisfied with its
+-  stability
+-* [dev](https://github.com/AFLplusplus/AFLplusplus/tree/dev): development state
+-  of AFL++ - bleeding edge and you might catch a checkout which does not compile
+-  or has a bug. **We only accept PRs (pull requests) for the 'dev' branch!**
+-* (any other): experimental branches to work on specific features or testing new
+-  functionality or changes.
+-
+-## Help wanted
+-
+-We have several [ideas](docs/ideas.md) we would like to see in AFL++ to make it
+-even better. However, we already work on so many things that we do not have the
+-time for all the big ideas.
+-
+-This can be your way to support and contribute to AFL++ - extend it to do
+-something cool.
+-
+-For everyone who wants to contribute (and send pull requests), please read our
+-[contributing guidelines](CONTRIBUTING.md) before you submit.
+-
+-## Special thanks
+-
+-Many of the improvements to the original AFL and AFL++ wouldn't be possible
+-without feedback, bug reports, or patches from our contributors.
+-
+-Thank you! (For people sending pull requests - please add yourself to this list
+-:-)
+-
+-<details>
+-
+-  <summary>List of contributors</summary>
+-
+-  ```
+-    Jann Horn                             Hanno Boeck
+-    Felix Groebert                        Jakub Wilk
+-    Richard W. M. Jones                   Alexander Cherepanov
+-    Tom Ritter                            Hovik Manucharyan
+-    Sebastian Roschke                     Eberhard Mattes
+-    Padraig Brady                         Ben Laurie
+-    @dronesec                             Luca Barbato
+-    Tobias Ospelt                         Thomas Jarosch
+-    Martin Carpenter                      Mudge Zatko
+-    Joe Zbiciak                           Ryan Govostes
+-    Michael Rash                          William Robinet
+-    Jonathan Gray                         Filipe Cabecinhas
+-    Nico Weber                            Jodie Cunningham
+-    Andrew Griffiths                      Parker Thompson
+-    Jonathan Neuschaefer                  Tyler Nighswander
+-    Ben Nagy                              Samir Aguiar
+-    Aidan Thornton                        Aleksandar Nikolich
+-    Sam Hakim                             Laszlo Szekeres
+-    David A. Wheeler                      Turo Lamminen
+-    Andreas Stieger                       Richard Godbee
+-    Louis Dassy                           teor2345
+-    Alex Moneger                          Dmitry Vyukov
+-    Keegan McAllister                     Kostya Serebryany
+-    Richo Healey                          Martijn Bogaard
+-    rc0r                                  Jonathan Foote
+-    Christian Holler                      Dominique Pelle
+-    Jacek Wielemborek                     Leo Barnes
+-    Jeremy Barnes                         Jeff Trull
+-    Guillaume Endignoux                   ilovezfs
+-    Daniel Godas-Lopez                    Franjo Ivancic
+-    Austin Seipp                          Daniel Komaromy
+-    Daniel Binderman                      Jonathan Metzman
+-    Vegard Nossum                         Jan Kneschke
+-    Kurt Roeckx                           Marcel Boehme
+-    Van-Thuan Pham                        Abhik Roychoudhury
+-    Joshua J. Drake                       Toby Hutton
+-    Rene Freingruber                      Sergey Davidoff
+-    Sami Liedes                           Craig Young
+-    Andrzej Jackowski                     Daniel Hodson
+-    Nathan Voss                           Dominik Maier
+-    Andrea Biondo                         Vincent Le Garrec
+-    Khaled Yakdan                         Kuang-che Wu
+-    Josephine Calliotte                   Konrad Welc
+-    Thomas Rooijakkers                    David Carlier
+-    Ruben ten Hove                        Joey Jiao
+-    fuzzah                                @intrigus-lgtm
+-    Yaakov Saxon                          Sergej Schumilo
+-    Ziqiao Kong                           Ryan Berger
+-    Sangjun Park
+-  ```
+-
+-</details>
+-
+-## Cite
+-
+-If you use AFL++ in scientific work, consider citing
+-[our paper](https://www.usenix.org/conference/woot20/presentation/fioraldi)
+-presented at WOOT'20:
+-
+-    Andrea Fioraldi, Dominik Maier, Heiko Eißfeldt, and Marc Heuse. “AFL++: Combining incremental steps of fuzzing research”. In 14th USENIX Workshop on Offensive Technologies (WOOT 20). USENIX Association, Aug. 2020.
+-
+-<details>
+-
+-<summary>BibTeX</summary>
+-
+-  ```bibtex
+-  @inproceedings {AFLplusplus-Woot20,
+-  author = {Andrea Fioraldi and Dominik Maier and Heiko Ei{\ss}feldt and Marc Heuse},
+-  title = {{AFL++}: Combining Incremental Steps of Fuzzing Research},
+-  booktitle = {14th {USENIX} Workshop on Offensive Technologies ({WOOT} 20)},
+-  year = {2020},
+-  publisher = {{USENIX} Association},
+-  month = aug,
+-  }
+-  ```
+-
+-</details>
++Here is the repository containing the augmented version of AFL++ v4.32c for Tulip. The file [tulip.patch](./tulip.patch) summarize changes from the baseline (Commit c340a022 of the [original AFL++ repo](https://github.com/AFLplusplus/AFLplusplus/tree/c340a022e2546488c15f85593d0f37e30eeaab3a)).
+diff --git a/include/afl-fuzz-static-buffers.h b/include/afl-fuzz-static-buffers.h
+new file mode 100644
+index 00000000..dd8e6745
+--- /dev/null
++++ b/include/afl-fuzz-static-buffers.h
+@@ -0,0 +1,22 @@
++#ifndef AFL_STATIC_BUFFERS_H
++#define AFL_STATIC_BUFFERS_H
++
++#include <stddef.h>
++
++#include "config.h"
++
++extern char* wrapper_input_buffer;
++extern char* wrapper_input_buffer2;
++extern size_t wrapper_input_buffers_max_size;
++extern size_t wrapper_input_buffers_size;
++extern struct wildcard* global_current_wildcard;
++extern char filename_buffer[STATIC_FILENAME_BUFFER_SIZE];
++extern char filename_buffer2[STATIC_FILENAME_BUFFER_SIZE];
++extern char get_full_path_of_the_first_file_that_matches_the_path_buffer[AFL_MAX_STATIC_BUFFER_SIZE];
++extern char get_path_without_the_last_part_buffer[STATIC_FILENAME_BUFFER_SIZE];
++extern char get_associated_wildcard_name_from_queue_entry_path_buffer[STATIC_FILENAME_BUFFER_SIZE];
++extern char save_if_interesting_sourceFileDir_buffer[AFL_MAX_STATIC_BUFFER_SIZE];
++extern char save_if_interesting_sourceFilePath_buffer[AFL_MAX_STATIC_BUFFER_SIZE];
++extern char fuzz_one_original_in_buf_cpy[AFL_MAX_STATIC_BUFFER_SIZE];
++
++#endif
+\ No newline at end of file
+diff --git a/include/afl-fuzz.h b/include/afl-fuzz.h
+index 4729c321..9414ee0c 100644
+--- a/include/afl-fuzz.h
++++ b/include/afl-fuzz.h
+@@ -45,6 +45,7 @@
+ #include "sharedmem.h"
+ #include "forkserver.h"
+ #include "common.h"
++#include "wrapper.h"
+ 
+ #include <stdio.h>
+ #include <unistd.h>
+@@ -257,6 +258,7 @@ struct queue_entry {
+   struct tainted     *taint;             /* Taint information from CmpLog    */
+   struct skipdet_entry *skipdet_e;
+ 
++  struct wildcard* associated_wildcard;
+ };
+ 
+ struct extra_data {
+@@ -873,6 +875,7 @@ typedef struct afl_state {
+   u32   bitsmap_size;
+ #endif
+ 
++  struct wildcardListNode* wildcards;
+ } afl_state_t;
+ 
+ struct custom_mutator {
+@@ -1185,6 +1188,16 @@ void        deinit_py(void *);
+ 
+ #endif
+ 
++/* Utils */
++
++char* get_filename(char* path);
++char* get_path_without_the_last_part(char* __path); // foo/bar/toto => foo/bar
++bool str_begins_with(char* __prefix, char* __str);
++char* get_full_path_of_the_first_file_that_matches_the_path(char* __path);
++char* get_associated_wildcard_name_from_queue_entry_path(char* __path); // ./queue/id:000056,w:wid=51;depth=1;content=4,src:000037,time:107,execs:706,op:havoc,rep:2 => wid=51;depth=1;content=4
++bool str_contains(char* __str, char* __content);
++struct wildcard* find_matching_wildcard(afl_state_t* __afl, char* __fileName);
++
+ /* Queue */
+ 
+ void mark_as_det_done(afl_state_t *, struct queue_entry *);
+diff --git a/include/config.h b/include/config.h
+index 04e8efef..cbb7455a 100644
+--- a/include/config.h
++++ b/include/config.h
+@@ -26,7 +26,7 @@
+ /* Version string: */
+ 
+ // c = release, a = volatile github dev, e = experimental branch
+-#define VERSION "++4.32c"
++#define VERSION "++4.32c-wildcards_in_mutators-e"
+ 
+ /******************************************************
+  *                                                    *
+@@ -52,6 +52,12 @@
+ /* Default file permission umode when creating files (default: 0600) */
+ #define DEFAULT_PERMISSION 0600
+ 
++/* Static filename buffer size */
++#define STATIC_FILENAME_BUFFER_SIZE 8192
++
++/* AFL static buffer max size */
++#define AFL_MAX_STATIC_BUFFER_SIZE (1 * 1024 * 1024L) + 100
++
+ #ifdef __APPLE__
+   #include <TargetConditionals.h>
+   #if TARGET_OS_IOS
+@@ -562,5 +568,7 @@
+ 
+ #define AFL_TXT_STRING_MAX_MUTATIONS 6
+ 
++#define WRAPPER_MAX_INPUT_SIZE_BY_DEFAULT 4096
++
+ #endif                                                  /* ! _HAVE_CONFIG_H */
+ 
+diff --git a/include/wrapper.h b/include/wrapper.h
+new file mode 100644
+index 00000000..02fb6636
+--- /dev/null
++++ b/include/wrapper.h
+@@ -0,0 +1,11 @@
++#ifndef WRAPPER_H
++#define WRAPPER_H
++
++#include "../wildcard-wrapper/config.h"
++#include "../wildcard-wrapper/wildcard_list.h"
++#include "../wildcard-wrapper/string_list.h"
++#include "../wildcard-wrapper/string_list_list.h"
++#include "../wildcard-wrapper/filesystem.h"
++#include "../wildcard-wrapper/wrapper_internals.h"
++
++#endif
+\ No newline at end of file
+diff --git a/instrumentation/afl-compiler-rt.o.c b/instrumentation/afl-compiler-rt.o.c
+index cba6436f..33899c84 100644
+--- a/instrumentation/afl-compiler-rt.o.c
++++ b/instrumentation/afl-compiler-rt.o.c
+@@ -1046,6 +1046,7 @@ static void __afl_start_forkserver(void) {
+       /* In child process: close fds, resume execution. */
+ 
+       if (unlikely(!child_pid)) {  // just to signal afl-fuzz faster
++        unsetenv("AFL_I_AM_THE_FORKSERVER");
+ 
+         //(void)nice(-20);
+ 
+diff --git a/src/afl-forkserver.c b/src/afl-forkserver.c
+index 3fc86b3b..08ea080b 100644
+--- a/src/afl-forkserver.c
++++ b/src/afl-forkserver.c
+@@ -878,7 +878,9 @@ void afl_fsrv_start(afl_forkserver_t *fsrv, char **argv,
+ 
+     /* CHILD PROCESS */
+ 
+-    // enable terminating on sigpipe in the children
++    setenv("AFL_I_AM_THE_FORKSERVER", "1", 0);
++
++    // enable terminating on sigpipe in the childs
+     struct sigaction sa;
+     memset((char *)&sa, 0, sizeof(sa));
+     sa.sa_handler = SIG_DFL;
+diff --git a/src/afl-fuzz-bitmap.c b/src/afl-fuzz-bitmap.c
+index 3333a6d1..41673072 100644
+--- a/src/afl-fuzz-bitmap.c
++++ b/src/afl-fuzz-bitmap.c
+@@ -23,7 +23,10 @@
+ 
+  */
+ 
++#include "afl-fuzz-static-buffers.h"
+ #include "afl-fuzz.h"
++#include "debug.h"
++#include "types.h"
+ #include <limits.h>
+ #include <stdio.h>
+ #include <stdlib.h>
+@@ -315,13 +318,35 @@ u8 *describe_op(afl_state_t *afl, u8 new_bits, size_t max_description_len) {
+       MIN(max_description_len, sizeof(afl->describe_op_buf_256));
+   u8 *ret = afl->describe_op_buf_256;
+ 
++  struct wildcard* wildcard;
++
++  if (unlikely(afl->syncing_party))
++  {
++    wildcard = global_current_wildcard;
++  }
++  else
++  {
++    wildcard = afl->queue_cur->associated_wildcard;
++  }
++
++  if (wildcard != NULL)
++  {
++    sprintf(ret, "w:%s,", wildcard->tag);
++  }
++  else
++  {
++    DEBUGF("WARNING: NULL wildcard for the case \"%s\" (%s:%d)\n", ret, __FILE__, __LINE__);
++
++    sprintf(ret, "w:NULL,");
++  }
++
+   if (unlikely(afl->syncing_party)) {
+ 
+-    sprintf(ret, "sync:%s,src:%06u", afl->syncing_party, afl->syncing_case);
++    sprintf(ret + strlen(ret), "sync:%s,src:%06u", afl->syncing_party, afl->syncing_case);
+ 
+   } else {
+ 
+-    sprintf(ret, "src:%06u", afl->current_entry);
++    sprintf(ret + strlen(ret), "src:%06u", afl->current_entry);
+ 
+     if (afl->splicing_with >= 0) {
+ 
+@@ -662,6 +687,29 @@ u8 __attribute__((hot)) save_if_interesting(afl_state_t *afl, void *mem,
+ 
+   save_to_queue:
+ 
++  if (unlikely(afl->syncing_party))
++  {
++    char* sourceFileDir = save_if_interesting_sourceFileDir_buffer;
++    char* sourceFilePath = save_if_interesting_sourceFilePath_buffer;
++    char* sourceFileRealPath;
++    char* associatedWildcardFilename;
++
++    strcpy(sourceFileDir, (char*)afl->sync_dir);
++    strcat(sourceFileDir, "/");
++    strcat(sourceFileDir, (char*)afl->syncing_party);
++    strcat(sourceFileDir, "/queue");
++    sprintf(sourceFilePath, "%s/id:%06u", sourceFileDir, afl->syncing_case);
++
++    sourceFileRealPath = get_full_path_of_the_first_file_that_matches_the_path(sourceFilePath);
++    associatedWildcardFilename = get_associated_wildcard_name_from_queue_entry_path(sourceFileRealPath);
++
++    global_current_wildcard = wildcardList_findWildcardByWildcardTag(afl->wildcards, associatedWildcardFilename);
++  }
++  else
++  {
++    global_current_wildcard = NULL;
++  }
++
+ #ifndef SIMPLE_FILES
+ 
+     if (!afl->afl_env.afl_sha1_filenames) {
+@@ -701,6 +749,11 @@ u8 __attribute__((hot)) save_if_interesting(afl_state_t *afl, void *mem,
+ 
+     add_to_queue(afl, queue_fn, len, 0);
+ 
++    if (unlikely(global_current_wildcard != NULL))
++    {
++      afl->queue_top->associated_wildcard = global_current_wildcard;
++    }
++
+     if (unlikely(afl->fuzz_mode) &&
+         likely(afl->switch_fuzz_mode && !afl->non_instrumented_mode)) {
+ 
+diff --git a/src/afl-fuzz-init.c b/src/afl-fuzz-init.c
+index cf8d319c..762af3c0 100644
+--- a/src/afl-fuzz-init.c
++++ b/src/afl-fuzz-init.c
+@@ -28,6 +28,7 @@
+ #include <limits.h>
+ #include <string.h>
+ #include "cmplog.h"
++#include "config.h"
+ 
+ #ifdef HAVE_AFFINITY
+ 
+@@ -936,9 +937,21 @@ void perform_dry_run(afl_state_t *afl) {
+     if (fd < 0) { PFATAL("Unable to open '%s'", q->fname); }
+ 
+     u32 read_len = MIN(q->len, (u32)MAX_FILE);
+-    use_mem = afl_realloc(AFL_BUF_PARAM(in), read_len);
++    use_mem = afl_realloc(AFL_BUF_PARAM(in), AFL_MAX_STATIC_BUFFER_SIZE);
+     ck_read(fd, use_mem, read_len, q->fname);
+ 
++    if (str_contains((char*)q->fname, "time:0") == false) // To reverse wildcards on previously generated seeds
++    {
++      struct wildcard* associatedWildcard = find_matching_wildcard(afl, (char*)q->fname);
++
++      if (associatedWildcard != NULL)
++      {
++        q->associated_wildcard = associatedWildcard;
++
++        fillWildcard((char*)use_mem, AFL_MAX_STATIC_BUFFER_SIZE, q->associated_wildcard, NULL);
++      }
++    }
++
+     close(fd);
+ 
+     res = calibrate_case(afl, q, use_mem, 0, 1);
+diff --git a/src/afl-fuzz-one.c b/src/afl-fuzz-one.c
+index dfd3c779..fbc9512c 100644
+--- a/src/afl-fuzz-one.c
++++ b/src/afl-fuzz-one.c
+@@ -23,7 +23,9 @@
+ 
+  */
+ 
++#include "afl-fuzz-static-buffers.h"
+ #include "afl-fuzz.h"
++#include <stddef.h>
+ #include <string.h>
+ #include <limits.h>
+ #include "cmplog.h"
+@@ -320,6 +322,27 @@ static void locate_diffs(u8 *ptr1, u8 *ptr2, u32 len, s32 *first, s32 *last) {
+ 
+ #endif                                                     /* !IGNORE_FINDS */
+ 
++// Example : id:000000,time:0,execs:0,orig:1_2.adv -> 1_2.adv
++char* get_last_part_of_filename(char* __filename)
++{
++  size_t filename_length = strlen(__filename);
++  char* filename_cursor = __filename + filename_length - 1;
++
++  while ((filename_cursor != __filename) && (*filename_cursor != ':'))
++  {
++    filename_cursor--;
++  }
++
++  if (*filename_cursor == ':')
++  {
++    filename_cursor++;
++  }
++
++  strcpy(filename_buffer, filename_cursor);
++
++  return filename_buffer;
++}
++
+ /* Take the current entry from the queue, fuzz it for a while. This
+    function is a tad too long... returns 0 if fuzzed successfully, 1 if
+    skipped or bailed out. */
+@@ -429,6 +452,44 @@ u8 fuzz_one_original(afl_state_t *afl) {
+   orig_in = in_buf = queue_testcase_get(afl, afl->queue_cur);
+   len = afl->queue_cur->len;
+ 
++  if (unlikely(afl->queue_cur->associated_wildcard == NULL))
++  {
++    struct wildcard* associatedWildcard = find_matching_wildcard(afl, (char*)afl->queue_cur->fname);
++
++    if (associatedWildcard == NULL)
++    {
++      afl->queue_cur->disabled = 1;
++      afl->reinit_table = 1;
++
++      if (afl->queue_cur->was_fuzzed == 0)
++      {
++        afl->queue_cur->was_fuzzed = 1;
++        --afl->pending_not_fuzzed;
++        --afl->active_items;
++      }
++
++      afl->queue_cur = afl->queue_cur->mother;
++    }
++    else
++    {
++      afl->queue_cur->associated_wildcard = associatedWildcard;
++
++      if (str_contains((char*)afl->queue_cur->fname, "time:0") == true) // To reverse wildcard only on original seeds
++      {
++        char* in_buf_cpy = fuzz_one_original_in_buf_cpy;
++
++        reverseWildcard((char*)in_buf, (char*)in_buf_cpy, len, afl->queue_cur->associated_wildcard);
++
++        memcpy(in_buf, in_buf_cpy, len);
++      }
++    }
++  }
++
++  if (unlikely(afl->queue_cur == NULL))
++  {
++    return 1;
++  }
++
+   out_buf = afl_realloc(AFL_BUF_PARAM(out), len);
+   if (unlikely(!out_buf)) { PFATAL("alloc"); }
+ 
+diff --git a/src/afl-fuzz-queue.c b/src/afl-fuzz-queue.c
+index faec406d..488e06d4 100644
+--- a/src/afl-fuzz-queue.c
++++ b/src/afl-fuzz-queue.c
+@@ -714,6 +714,7 @@ void add_to_queue(afl_state_t *afl, u8 *fname, u32 len, u8 passed_det) {
+   if (unlikely(!queue_buf)) { PFATAL("alloc"); }
+   queue_buf[afl->queued_items - 1] = q;
+   q->id = afl->queued_items - 1;
++  q->associated_wildcard = NULL;
+ 
+   u64 cur_time = get_cur_time();
+ 
+diff --git a/src/afl-fuzz-run.c b/src/afl-fuzz-run.c
+index e6fb3ac6..fe76510b 100644
+--- a/src/afl-fuzz-run.c
++++ b/src/afl-fuzz-run.c
+@@ -25,9 +25,14 @@
+  */
+ 
+ #include "afl-fuzz.h"
++#include "alloc-inl.h"
++#include "afl-fuzz-static-buffers.h"
++#include "config.h"
++#include <string.h>
+ #include <sys/time.h>
+ #include <signal.h>
+ #include <limits.h>
++#include <unistd.h>
+ #if !defined NAME_MAX
+   #define NAME_MAX _XOPEN_NAME_MAX
+ #endif
+@@ -1188,15 +1193,48 @@ u8 __attribute__((hot)) common_fuzz_stuff(afl_state_t *afl, u8 *out_buf,
+                                           u32 len) {
+ 
+   u8 fault;
++  u32 orig_len = len;
+ 
+-  if (unlikely(len = write_to_testcase(afl, (void **)&out_buf, len, 0)) == 0) {
++  memset(wrapper_input_buffer, 0, wrapper_input_buffers_size);
++  memset(wrapper_input_buffer2, 0, wrapper_input_buffers_size);
+ 
+-    return 0;
++  if (afl->queue_cur->associated_wildcard != NULL)
++  {
++    struct wildcard* wildcard = afl->queue_cur->associated_wildcard;
+ 
++    size_t neededSpaceToFillWildcard = lengthNeededToFillWildcard((char*)out_buf, wildcard);
++
++    if ((neededSpaceToFillWildcard > wrapper_input_buffers_size) && (neededSpaceToFillWildcard < wrapper_input_buffers_max_size))
++    {
++      wrapper_input_buffers_size = neededSpaceToFillWildcard;
++    }
++
++    memcpy(wrapper_input_buffer, out_buf, len);
++
++    size_t newInputLength = fillWildcard(wrapper_input_buffer, wrapper_input_buffers_size, wildcard, NULL);
++
++    len = write_to_testcase(afl,(void**)&wrapper_input_buffer, newInputLength, 0);
++  }
++  else
++  {
++    if (unlikely(len = write_to_testcase(afl, (void **)&out_buf, len, 0)) == 0)
++    {
++      return 0;
++    }
+   }
+ 
+   fault = fuzz_run_target(afl, &afl->fsrv, afl->fsrv.exec_tmout);
+ 
++  if (afl->queue_cur->associated_wildcard != NULL)
++  {
++    struct wildcard* wildcard = afl->queue_cur->associated_wildcard;
++
++    reverseWildcard(wrapper_input_buffer, wrapper_input_buffer2, wrapper_input_buffers_size, wildcard);
++
++    lseek(afl->fsrv.out_fd, 0, SEEK_SET);
++    len = write(afl->fsrv.out_fd, wrapper_input_buffer2, strnlen(wrapper_input_buffer2, wrapper_input_buffers_size));
++  }
++
+   if (afl->stop_soon) { return 1; }
+ 
+   if (fault == FSRV_RUN_TMOUT) {
+@@ -1227,7 +1265,7 @@ u8 __attribute__((hot)) common_fuzz_stuff(afl_state_t *afl, u8 *out_buf,
+ 
+   /* This handles FAULT_ERROR for us: */
+ 
+-  afl->queued_discovered += save_if_interesting(afl, out_buf, len, fault);
++  afl->queued_discovered += save_if_interesting(afl, out_buf, orig_len, fault);
+ 
+   if (!(afl->stage_cur % afl->stats_update_freq) ||
+       afl->stage_cur + 1 == afl->stage_max) {
+diff --git a/src/afl-fuzz-static-buffers.c b/src/afl-fuzz-static-buffers.c
+new file mode 100644
+index 00000000..89182c6f
+--- /dev/null
++++ b/src/afl-fuzz-static-buffers.c
+@@ -0,0 +1,18 @@
++#include <stddef.h>
++
++#include "afl-fuzz-static-buffers.h"
++#include "config.h"
++
++char* wrapper_input_buffer;
++char* wrapper_input_buffer2;
++size_t wrapper_input_buffers_max_size = MAX_FILE + 100;
++size_t wrapper_input_buffers_size = WRAPPER_MAX_INPUT_SIZE_BY_DEFAULT;
++struct wildcard* global_current_wildcard = NULL;
++char filename_buffer[STATIC_FILENAME_BUFFER_SIZE];
++char filename_buffer2[STATIC_FILENAME_BUFFER_SIZE];
++char get_full_path_of_the_first_file_that_matches_the_path_buffer[AFL_MAX_STATIC_BUFFER_SIZE];
++char get_path_without_the_last_part_buffer[STATIC_FILENAME_BUFFER_SIZE];
++char get_associated_wildcard_name_from_queue_entry_path_buffer[STATIC_FILENAME_BUFFER_SIZE];
++char save_if_interesting_sourceFileDir_buffer[AFL_MAX_STATIC_BUFFER_SIZE];
++char save_if_interesting_sourceFilePath_buffer[AFL_MAX_STATIC_BUFFER_SIZE];
++char fuzz_one_original_in_buf_cpy[AFL_MAX_STATIC_BUFFER_SIZE];
+\ No newline at end of file
+diff --git a/src/afl-fuzz-stats.c b/src/afl-fuzz-stats.c
+index 8c13cd65..4955c1de 100644
+--- a/src/afl-fuzz-stats.c
++++ b/src/afl-fuzz-stats.c
+@@ -27,6 +27,7 @@
+ #include "afl-fuzz.h"
+ #include "envs.h"
+ #include <limits.h>
++#include <stdlib.h>
+ 
+ static char fuzzing_state[4][12] = {"started :-)", "in progress", "final phase",
+                                     "finished..."};
+@@ -120,6 +121,8 @@ void write_setup_file(afl_state_t *afl, u32 argc, char **argv) {
+ 
+   }
+ 
++  fprintf(f, ENV_WILDCARD_PATH "=%s\n", getenv(ENV_WILDCARD_PATH));
++
+   fprintf(f, "# command line:\n");
+ 
+   size_t j;
+diff --git a/src/afl-fuzz-utils.c b/src/afl-fuzz-utils.c
+new file mode 100644
+index 00000000..4fe827a8
+--- /dev/null
++++ b/src/afl-fuzz-utils.c
+@@ -0,0 +1,271 @@
++#include <stdbool.h>
++#include <stddef.h>
++#include <stdlib.h>
++#include <string.h>
++#include <dirent.h>
++
++#include "afl-fuzz-static-buffers.h"
++#include "afl-fuzz.h"
++#include "debug.h"
++
++char* get_filename(char* path)
++{
++  size_t path_length = strlen(path);
++  char* path_cursor = path + path_length - 1;
++
++  while ((path_cursor != path) && (*path_cursor != '/'))
++  {
++    path_cursor--;
++  }
++
++  if (*path_cursor == '/')
++  {
++    path_cursor++;
++  }
++
++  char* res = filename_buffer2;
++
++  strcpy(res, path_cursor);
++
++  return res;
++}
++
++char* get_path_without_the_last_part(char* __path) // foo/bar/toto => foo/bar
++{
++  char* result = get_path_without_the_last_part_buffer;
++  char* last_slash_ptr;
++  size_t len;
++
++  last_slash_ptr = strrchr(__path, '/'); // We take a pointer on the last '/' of the path
++  len = strlen(__path) - strlen(last_slash_ptr);
++
++  strncpy(result, __path, len);
++
++  result[len] = '\0';
++
++  return result;
++}
++
++bool str_begins_with(char* __prefix, char* __str)
++{
++    size_t prefix_length = strlen(__prefix);
++
++    return strncmp(__prefix, __str, prefix_length) == 0;
++}
++
++char* get_full_path_of_the_first_file_that_matches_the_path(char* __path)
++{
++  char* directory = get_path_without_the_last_part(__path);
++  char* filename = get_filename(__path);
++  struct dirent* directory_entry;
++  DIR* directory_fd;
++  bool cont = true;
++  char* result = NULL;
++
++  directory_fd = opendir(directory);
++  directory_entry = readdir(directory_fd);
++
++  while ((cont == true) && (directory_entry != NULL))
++  {
++    if (str_begins_with(filename, directory_entry->d_name) == true)
++    {
++      result = get_full_path_of_the_first_file_that_matches_the_path_buffer;
++
++      sprintf(result, "%s/%s", directory, directory_entry->d_name);
++
++      cont = false;
++    }
++    else
++    {
++      directory_entry = readdir(directory_fd);
++    }
++  }
++
++  return result;
++}
++
++char* get_associated_wildcard_name_from_queue_entry_path(char* __path) // ./queue/id:000056,w:wid=51;depth=1;content=4,src:000037,time:107,execs:706,op:havoc,rep:2 => wid=51;depth=1;content=4
++{
++  char* filename = get_filename(__path);
++  char* wildcard_part_ptr;
++  char* wildcard_filename_ptr;
++  char* result;
++  char* parameter;
++  char* strtok_saveptr;
++  char* wildcard_filename_ptr_cursor;
++  int semicolons_count_in_wildcard_filename_ptr_cursor = -1;
++
++  strtok_r(filename, ",", &strtok_saveptr); // id:000056
++  wildcard_part_ptr = strtok_r(NULL, ",", &strtok_saveptr); // w:wid=51;depth=1;content=4 | time:0 => In this case, we have to catch orig:wid=51;depth=1;content=4
++
++  // wildcard_part_ptr = "w:wid=51;depth=1;content=4"
++  parameter = strtok(wildcard_part_ptr, ":"); // w
++
++  if (strcmp(parameter, "w") == 0)
++  {
++    wildcard_filename_ptr = strtok(NULL, ":"); // wid=51;depth=1;content=4
++  }
++  else // If the fuzzer takes queue item that comes from initial seeds, there is no "w" parameter, and the wildcard tag is put in the "orig" parameter
++  {
++    strtok_r(NULL, ",", &strtok_saveptr);
++    wildcard_part_ptr = strtok_r(NULL, ",", &strtok_saveptr); // orig:wid=51;depth=1;content=4
++
++    if (str_begins_with("orig:id", wildcard_part_ptr) == true) // orig:id:000076,w:wid=11;depth=3;content=2-3-1;merged2id=29,...
++    {
++      wildcard_filename_ptr = wildcard_part_ptr;
++
++      while ((wildcard_filename_ptr[0] != 'w') || (wildcard_filename_ptr[1] != 'i') || (wildcard_filename_ptr[2] != 'd')) // CRADO
++      {
++        wildcard_filename_ptr++;
++      }
++
++      wildcard_filename_ptr = strtok(wildcard_filename_ptr, ",");
++    }
++    else
++    {
++      strtok(wildcard_part_ptr, ":"); // orig
++      wildcard_filename_ptr = strtok(NULL, ":"); // wid=51;depth=1;content=4;seed_id=0
++
++      if (str_contains(wildcard_filename_ptr, "merged") == false) // If the wildcard has the for "wid=3;depth=3;content=3-3-8;merged1id=624", do nothing...
++      {
++        semicolons_count_in_wildcard_filename_ptr_cursor = 0;
++        wildcard_filename_ptr_cursor = wildcard_filename_ptr;
++
++        while ((semicolons_count_in_wildcard_filename_ptr_cursor < 3) && (wildcard_filename_ptr != NULL)) // To remove the "seed_id=0" part in wid=51;depth=1;content=4;seed_id=0 by counting the number of semicolons (';')
++        {
++          if (*wildcard_filename_ptr_cursor == ';')
++          {
++            ++semicolons_count_in_wildcard_filename_ptr_cursor;
++          }
++
++          ++wildcard_filename_ptr_cursor;
++        }
++      }
++      else
++      {
++        semicolons_count_in_wildcard_filename_ptr_cursor = 0;
++        wildcard_filename_ptr_cursor = wildcard_filename_ptr;
++
++        while ((semicolons_count_in_wildcard_filename_ptr_cursor < 4) && (wildcard_filename_ptr != NULL)) // To remove the "seed_id=0" part in wid=51;depth=1;content=4;seed_id=0 by counting the number of semicolons (';')
++        {
++          if (*wildcard_filename_ptr_cursor == ';')
++          {
++            ++semicolons_count_in_wildcard_filename_ptr_cursor;
++          }
++
++          ++wildcard_filename_ptr_cursor;
++        }
++      }
++    }
++
++    if ((semicolons_count_in_wildcard_filename_ptr_cursor == 3) || (semicolons_count_in_wildcard_filename_ptr_cursor == 4))
++    {
++      *(wildcard_filename_ptr_cursor - 1) = '\0';
++    }
++  }
++
++  if (wildcard_filename_ptr != NULL)
++  {
++    DEBUGF("wildcard_filename_ptr = %s\n", wildcard_filename_ptr);
++  }
++  else
++  {
++    DEBUGF("wildcard_filename_ptr is null (%s:%d)\n", __FILE__, __LINE__);
++  }
++
++  result = get_associated_wildcard_name_from_queue_entry_path_buffer;
++
++  strcpy(result, wildcard_filename_ptr);
++
++  return result;
++}
++
++bool str_contains(char* __str, char* __content)
++{
++  bool found = false;
++  size_t i = 0;
++  size_t content_len = strlen(__content);
++  size_t str_len = strlen(__str);
++  char* str_ptr = __str;
++
++  while ((found == false) && ((i + content_len) < str_len))
++  {
++    if (strncmp(str_ptr, __content, content_len) == 0)
++    {
++      found = true;
++    }
++    else
++    {
++      ++str_ptr;
++      ++i;
++    }
++  }
++
++  return found;
++}
++
++// Example : wid=0;depth=2;content=2-3 or id:...,wid=0;depth=2;content=2-3,...
++struct wildcard* find_matching_wildcard(afl_state_t* __afl, char* __fileName)
++{
++  struct wildcard* result = NULL;
++  struct wildcardListNode* currentWildcardListNode = __afl->wildcards;
++  struct wildcard* currentWildcard;
++  char* currentWildcardFileName;
++  size_t fileNameLength = strlen(__fileName);
++  char* fileNameCursor = __fileName;
++  size_t i;
++  size_t j;
++
++  if (strncmp(__fileName, "wid=", 4) == 0)
++  {
++    while ((wildcardList_hasNext(currentWildcardListNode) == true) && (result == NULL))
++    {
++      currentWildcard = wildcardList_next(&currentWildcardListNode);
++      currentWildcardFileName = currentWildcard->tag;
++
++      if (str_begins_with(currentWildcardFileName, __fileName) == true)
++      {
++        result = currentWildcard;
++      }
++    }
++  }
++  else
++  {
++    i = 0;
++
++    while ((strncmp(fileNameCursor, "wid=", 4) != 0) && (i < fileNameLength))
++    {
++      ++fileNameCursor;
++      ++i;
++    }
++
++    j = 0;
++
++    if (i < fileNameLength) // If we found "wid="
++    {
++      while ((fileNameCursor[j] != ',') && (i < fileNameLength))
++      {
++        ++i;
++        ++j;
++      }
++
++      while ((wildcardList_hasNext(currentWildcardListNode) == true) && (result == NULL))
++      {
++        currentWildcard = wildcardList_next(&currentWildcardListNode);
++        currentWildcardFileName = currentWildcard->tag;
++
++        if (str_begins_with(currentWildcardFileName, fileNameCursor) == true)
++        {
++          result = currentWildcard;
++        }
++      }
++    }
++  }
++
++  if (result == NULL)
++  {
++    DEBUGF("NULL in %s:%d : \"%s\"\n", __FILE__, __LINE__, __fileName);
++  }
++
++  return result;
++}
+diff --git a/src/afl-fuzz.c b/src/afl-fuzz.c
+index 3574a598..f07913cd 100644
+--- a/src/afl-fuzz.c
++++ b/src/afl-fuzz.c
+@@ -24,6 +24,11 @@
+ 
+  */
+ 
++#include "alloc-inl.h"
++#include "config.h"
++#include "debug.h"
++#include "wrapper.h"
++#include "afl-fuzz-static-buffers.h"
+ #include "afl-fuzz.h"
+ #include "alloc-inl.h"
+ #include "cmplog.h"
+@@ -31,6 +36,7 @@
+ #include "common.h"
+ #include <limits.h>
+ #include <stdlib.h>
++#include <unistd.h>
+ #ifndef USEMMAP
+   #include <sys/mman.h>
+   #include <sys/stat.h>
+@@ -543,6 +549,74 @@ static void fasan_check_afl_preload(char *afl_preload) {
+ 
+ }
+ 
++#define ENV_WILDCARD_DEBUG_MODE "DEBUG"
++
++void initWrapper(afl_state_t* afl)
++{
++  struct stringListNode* wildcardsFiles;
++  char* wildcardsDir = getenv(ENV_WILDCARD_PATH);
++  char* currentWildcardPath;
++  char* currentWildcardContent;
++  char cwdBuf[256];
++  char* wildcardFileName;
++
++  if (wildcardsDir == NULL)
++  {
++    FATAL("Environment variable %s is empty (%s:%d)", ENV_WILDCARD_PATH, __FILE__, __LINE__);
++  }
++
++  wildcardsFiles = getDirectoryContent(wildcardsDir);
++
++  if (stringList_length(wildcardsFiles) == 0)
++  {
++    FATAL("The wildcard directory %s is empty, or is unavailable (%s:%d)", ENV_WILDCARD_PATH, __FILE__, __LINE__);
++  }
++
++  if (wildcardsFiles == NULL)
++  {
++    FATAL("%s does not exist (%s:%d)", ENV_WILDCARD_PATH, __FILE__, __LINE__);
++  }
++
++  if (stringList_hasNext(wildcardsFiles) == false)
++  {
++    FATAL("There is no wildcards in %s (%s:%d)", ENV_WILDCARD_PATH, __FILE__, __LINE__);
++  }
++
++  afl->wildcards = wildcardList_init();
++
++  wrapper_input_buffer = ck_alloc(wrapper_input_buffers_max_size);
++  wrapper_input_buffer2 = ck_alloc(wrapper_input_buffers_max_size);
++
++  wildcardsFiles = getDirectoryContent(wildcardsDir);
++
++  while (stringList_hasNext(wildcardsFiles) == true)
++  {
++    currentWildcardPath = stringList_next(&wildcardsFiles);
++    currentWildcardContent = readWildcard(currentWildcardPath, read);
++
++    if (strlen(currentWildcardContent) != 0)
++    {
++      wildcardFileName = get_filename(currentWildcardPath);
++
++      wildcardList_add(&afl->wildcards, parseWildcard(currentWildcardContent, wildcardFileName));
++    }
++  }
++
++  if (wildcardList_length(afl->wildcards) == 0)
++  {
++    getcwd(cwdBuf, 256);
++
++    FATAL("Unable to load wildcards in directory %s (CWD : %s) (%s:%d)", wildcardsDir, cwdBuf, __FILE__, __LINE__);
++  }
++
++  stringList_free(&wildcardsFiles);
++
++  wildcardList_sortInPlaceByNumberOfStaticWords(&afl->wildcards);
++
++  OKF("Wildcards are ready :-)\n");
++  OKF("Number of loaded wildcards : %ld\n", wildcardList_length(afl->wildcards));
++}
++
+ /* Main entry point */
+ 
+ int main(int argc, char **argv_orig, char **envp) {
+@@ -606,12 +680,15 @@ int main(int argc, char **argv_orig, char **envp) {
+ 
+   SAYF(cCYA "afl-fuzz" VERSION cRST
+             " based on afl by Michal Zalewski and a large online community\n");
++  SAYF(cRED "This is not the vanilla version of AFL++\n" cRST);
+ 
+   gettimeofday(&tv, &tz);
+   rand_set_seed(afl, tv.tv_sec ^ tv.tv_usec ^ getpid());
+ 
+   afl->shmem_testcase_mode = 1;  // we always try to perform shmem fuzzing
+ 
++  initWrapper(afl);
++
+   // still available: HjJkKqrv
+   while (
+       (opt = getopt(argc, argv,
+@@ -1250,6 +1327,13 @@ int main(int argc, char **argv_orig, char **envp) {
+ 
+         }
+ 
++        if (afl->most_time == 0)
++        {
++          OKF("-V option = 0 => We exit now !\n");
++
++          exit(0);
++        }
++
+       } break;
+ 
+       case 'E': {
+@@ -1502,7 +1586,7 @@ int main(int argc, char **argv_orig, char **envp) {
+   if (afl->is_main_node == 1 && afl->schedule != FAST &&
+       afl->schedule != EXPLORE) {
+ 
+-    FATAL("-M is compatible only with fast and explore -p power schedules");
++    WARNF("-M is compatible only with fast and explore -p power schedules");
+ 
+   }
+ 
+@@ -3634,6 +3718,9 @@ stop_fuzzing:
+   afl_state_deinit(afl);
+   free(afl);                                                 /* not tracked */
+ 
++  ck_free(wrapper_input_buffer);
++  ck_free(wrapper_input_buffer2);
++
+   argv_cpy_free(argv);
+ 
+   alloc_report();
+diff --git a/wildcard-wrapper/Makefile b/wildcard-wrapper/Makefile
+new file mode 100644
+index 00000000..cee39ccc
+--- /dev/null
++++ b/wildcard-wrapper/Makefile
+@@ -0,0 +1,33 @@
++CC=gcc
++CC_OPTIONS_BASE=-Wall -Wextra -Werror -Wno-unknown-pragmas -Wno-unknown-attributes
++SRC_BASE=$(filter-out apply_wildcard.c put_concrete_data_on_2nd_and_next_wildcards.c concretize_wildcard.c, $(wildcard *.c))
++OBJ_BASE=$(SRC_BASE:.c=.o)
++OBJ_i386_BASE=$(SRC_BASE:.c=-i386.o)
++
++ifeq ($(DEBUG), 1)
++	CC_OPTIONS=-g -DNO_CRASH_WHEN_THERE_IS_NO_WILDCARD $(CC_OPTIONS_BASE)
++else
++	CC_OPTIONS=$(CC_OPTIONS_BASE)
++endif
++
++.PHONY: wrapper wrapper-i386 toolbox clean
++
++%.o: %.c
++	${CC} -c $^ ${CC_OPTIONS} -o $@
++
++%-i386.o: %.c
++	${CC} -c -m32 $^ ${CC_OPTIONS} -o $@
++
++wrapper: $(OBJ_BASE)
++	ld -relocatable $^ -o wrapper_final.o
++
++wrapper-i386: $(OBJ_i386_BASE)
++	ld -melf_i386 -relocatable $^ -o wrapper_final-i386.o
++
++toolbox: $(OBJ_BASE) apply_wildcard.o put_concrete_data_on_2nd_and_next_wildcards.o concretize_wildcard.o
++	gcc $(OBJ_BASE) apply_wildcard.o -o apply_wildcard
++	gcc $(OBJ_BASE) put_concrete_data_on_2nd_and_next_wildcards.o -o put_concrete_data_on_2nd_and_next_wildcards
++	gcc $(OBJ_BASE) concretize_wildcard.o -o concretize_wildcard
++
++clean:
++	rm -f *.o apply_wildcard put_concrete_data_on_2nd_and_next_wildcards concretize_wildcard
+\ No newline at end of file
+diff --git a/wildcard-wrapper/config.h b/wildcard-wrapper/config.h
+new file mode 100644
+index 00000000..6426d02e
+--- /dev/null
++++ b/wildcard-wrapper/config.h
+@@ -0,0 +1,12 @@
++#ifndef CONFIG_H
++#define CONFIG_H
++
++#define MAX_FILE_WRAPPER                (1 * 1024 * 1024L) + 100
++#define MAX_STRING_SIZE                 MAX_FILE_WRAPPER
++#define WILDCARD_FILE_READ_BUFFER_SIZE  MAX_FILE_WRAPPER
++#define ENV_WILDCARD_PATH               "WILDCARD_PATH"
++#define READ_BUFFER_SIZE                MAX_FILE_WRAPPER
++#define ENV_SHOW_WILDCARDS              "SHOW_WILDCARDS"
++#define DUMMY_CONCRETE_DATA             "aaaaa"
++
++#endif
+\ No newline at end of file
+diff --git a/wildcard-wrapper/filesystem.c b/wildcard-wrapper/filesystem.c
+new file mode 100644
+index 00000000..4aee2cdd
+--- /dev/null
++++ b/wildcard-wrapper/filesystem.c
+@@ -0,0 +1,47 @@
++#include <assert.h>
++#include <stddef.h>
++#include <string.h>
++#include <sys/types.h>
++#include <dirent.h>
++
++#include "filesystem.h"
++#include "config.h"
++#include "string_list.h"
++#include "utils.h"
++
++struct stringListNode* getDirectoryContent(char* directoryPath)
++{
++    struct stringListNode* result = stringList_init();
++    DIR* directoryFD;
++    struct dirent* directoryEntry;
++    char* currentFilePath;
++    size_t currentFilePathLength;
++
++    directoryFD = opendir(directoryPath);
++
++    if (directoryFD != NULL)
++    {
++        directoryEntry = readdir(directoryFD);
++
++        while (directoryEntry != NULL)
++        {
++            if ((strcmp(directoryEntry->d_name, ".") != 0) && (strcmp(directoryEntry->d_name, "..") != 0))
++            {
++                currentFilePathLength = strlen(directoryPath) + strlen(directoryEntry->d_name) + 5;
++                currentFilePath = malloc(sizeof(char) * currentFilePathLength);
++
++                strncpy(currentFilePath, directoryPath, currentFilePathLength);
++                strConcat(currentFilePath, "/", currentFilePathLength);
++                strConcat(currentFilePath, directoryEntry->d_name, currentFilePathLength);
++
++                stringList_add(&result, currentFilePath);
++            }
++
++            directoryEntry = readdir(directoryFD);
++        }
++
++        closedir(directoryFD);
++    }
++
++    return result;
++}
+\ No newline at end of file
+diff --git a/wildcard-wrapper/filesystem.h b/wildcard-wrapper/filesystem.h
+new file mode 100644
+index 00000000..ed6107b3
+--- /dev/null
++++ b/wildcard-wrapper/filesystem.h
+@@ -0,0 +1,8 @@
++#ifndef FILESYSTEM_H
++#define FILESYSTEM_H
++
++#include "string_list.h"
++
++struct stringListNode* getDirectoryContent(char* directoryPath);
++
++#endif
+\ No newline at end of file
+diff --git a/wildcard-wrapper/string_list.c b/wildcard-wrapper/string_list.c
+new file mode 100644
+index 00000000..c3e13817
+--- /dev/null
++++ b/wildcard-wrapper/string_list.c
+@@ -0,0 +1,204 @@
++#include "string_list.h"
++#include "utils.h"
++
++struct stringListNode* stringList_init()
++{
++    return (struct stringListNode*)NULL;
++}
++
++void stringList_add(struct stringListNode** stringListPtr, char* contentToAdd)
++{
++    struct stringListNode* currentNode = *stringListPtr;
++
++    if (currentNode == (struct stringListNode*)NULL)
++    {
++        currentNode = malloc(sizeof(struct stringListNode));
++
++        assert(currentNode != (struct stringListNode*)NULL);
++
++        currentNode->nodeContent = contentToAdd;
++        currentNode->nextNode = (struct stringListNode*)NULL;
++
++        *stringListPtr = currentNode;
++    }
++    else
++    {
++        while (currentNode->nextNode != (struct stringListNode*)NULL)
++        {
++            currentNode = currentNode->nextNode;
++        }
++
++        currentNode->nextNode = malloc(sizeof(struct stringListNode));
++
++        assert(currentNode->nextNode != (struct stringListNode*)NULL);
++
++        currentNode->nextNode->nodeContent = contentToAdd;
++        currentNode->nextNode->nextNode = (struct stringListNode*)NULL;
++    }
++}
++
++void stringList_free(struct stringListNode** stringListPtr)
++{
++    if ((*stringListPtr) != (struct stringListNode*)NULL)
++    {
++        stringList_free(&((*stringListPtr)->nextNode));
++    }
++
++    free(*stringListPtr);
++    *stringListPtr = (struct stringListNode*)NULL;
++}
++
++void stringList_iter(struct stringListNode* stringList, void (*action)(char* str))
++{
++    struct stringListNode* currentNode = stringList;
++
++    while (currentNode != (struct stringListNode*)NULL)
++    {
++        action(currentNode->nodeContent);
++
++        currentNode = currentNode->nextNode;
++    }
++}
++
++void stringList_iteri(struct stringListNode* stringList, void (*action)(char* str, int i))
++{
++    struct stringListNode* currentNode = stringList;
++    int i = 0;
++
++    while (currentNode != (struct stringListNode*)NULL)
++    {
++        action(currentNode->nodeContent, i);
++
++        currentNode = currentNode->nextNode;
++        i = i + 1;
++    }
++}
++
++void stringList_iterd(struct stringListNode* stringList, void (*action)(char* str, void* data), void* data)
++{
++    struct stringListNode* currentNode = stringList;
++    int i = 0;
++
++    while (currentNode != (struct stringListNode*)NULL)
++    {
++        action(currentNode->nodeContent, data);
++
++        currentNode = currentNode->nextNode;
++        i = i + 1;
++    }
++}
++
++bool stringList_hasNext(struct stringListNode* stringList)
++{
++    return (stringList != (struct stringListNode*)NULL);
++}
++
++char* stringList_next(struct stringListNode** stringListPtr)
++{
++    char* result = (char*)NULL;
++    struct stringListNode* list = *stringListPtr;
++
++    if (list != (struct stringListNode*)NULL)
++    {
++        result = list->nodeContent;
++        *stringListPtr = list->nextNode;
++    }
++
++    return result;
++}
++
++void stringList_map_inplace(struct stringListNode* stringList, void (*transformation)(char** str))
++{
++    struct stringListNode* currentNode = stringList;
++
++    while (currentNode != (struct stringListNode*)NULL)
++    {
++        transformation(&currentNode->nodeContent);
++
++        currentNode = currentNode->nextNode;
++    }
++}
++
++void stringList_map_inplace_d(struct stringListNode* stringList, void (*transformation)(char** str, void* data), void* data)
++{
++    struct stringListNode* currentNode = stringList;
++
++    while (currentNode != (struct stringListNode*)NULL)
++    {
++        transformation(&currentNode->nodeContent, data);
++
++        currentNode = currentNode->nextNode;
++    }
++}
++
++size_t stringList_length(struct stringListNode* stringList)
++{
++    struct stringListNode* currentNode = stringList;
++    size_t i = 0;
++
++    while (currentNode != (struct stringListNode*)NULL)
++    {
++        i++;
++        currentNode = currentNode->nextNode;
++    }
++
++    return i;
++}
++
++size_t stringList_allStringsLength(struct stringListNode* stringList)
++{
++    struct stringListNode* currentNode = stringList;
++    int length = 0;
++
++    while (currentNode != (struct stringListNode*)NULL)
++    {
++        if ((currentNode != (struct stringListNode*)NULL) && (currentNode->nodeContent != (char*)NULL))
++        {
++            length = length + strlen(currentNode->nodeContent);
++        }
++
++        currentNode = currentNode->nextNode;
++    }
++
++    return length;
++}
++
++char* stringList_at(struct stringListNode* stringList, int i)
++{
++    struct stringListNode* currentNode = stringList;
++    int currentNodeIndex = 0;
++    char* result = NULL;
++
++    while ((stringList_hasNext(currentNode) == true) && (currentNodeIndex < i))
++    {
++        stringList_next(&currentNode);
++
++        ++currentNodeIndex;
++    }
++
++    if (currentNode != NULL)
++    {
++        result = currentNode->nodeContent;
++    }
++
++    return result;
++}
++
++bool stringList_stringBeginsWithAtLeastOneStringOfThisStringList(char* str, struct stringListNode* stringList)
++{
++    struct stringListNode* currentNode = stringList;
++    char* currentString;
++    bool result = false;
++
++    while ((result == false) && (stringList_hasNext(currentNode) == true))
++    {
++        currentString = stringList_next(&currentNode);
++
++        if (strBeginsWith(currentString, str) == true)
++        {
++            result = true;
++        }
++    }
++
++    return result;
++}
+\ No newline at end of file
+diff --git a/wildcard-wrapper/string_list.h b/wildcard-wrapper/string_list.h
+new file mode 100644
+index 00000000..44c4af19
+--- /dev/null
++++ b/wildcard-wrapper/string_list.h
+@@ -0,0 +1,30 @@
++#ifndef STRING_LIST_H
++#define STRING_LIST_H
++
++#include <assert.h>
++#include <stdlib.h>
++#include <stdbool.h>
++#include <string.h>
++
++struct stringListNode
++{
++    char* nodeContent;
++    struct stringListNode* nextNode;
++};
++
++struct stringListNode* stringList_init();
++void stringList_add(struct stringListNode** stringListPtr, char* contentToAdd);
++void stringList_free(struct stringListNode** stringListPtr);
++void stringList_iter(struct stringListNode* stringList, void (*action)(char* str));
++void stringList_iteri(struct stringListNode* stringList, void (*action)(char* str, int i));
++void stringList_iterd(struct stringListNode* stringList, void (*action)(char* str, void* data), void* data);
++bool stringList_hasNext(struct stringListNode* stringList);
++char* stringList_next(struct stringListNode** stringListPtr);
++void stringList_map_inplace(struct stringListNode* stringList, void (*transformation)(char** str));
++void stringList_map_inplace_d(struct stringListNode* stringList, void (*transformation)(char** str, void* data), void* data);
++size_t stringList_length(struct stringListNode* stringList);
++size_t stringList_allStringsLength(struct stringListNode* stringList);
++char* stringList_at(struct stringListNode* stringList, int i);
++bool stringList_stringBeginsWithAtLeastOneStringOfThisStringList(char* str, struct stringListNode* stringList);
++
++#endif
+\ No newline at end of file
+diff --git a/wildcard-wrapper/string_list_list.c b/wildcard-wrapper/string_list_list.c
+new file mode 100644
+index 00000000..a7fb0b06
+--- /dev/null
++++ b/wildcard-wrapper/string_list_list.c
+@@ -0,0 +1,81 @@
++#include "string_list_list.h"
++
++struct stringListListNode* stringListList_init()
++{
++    return (struct stringListListNode*)NULL;
++}
++
++void stringListList_add(struct stringListListNode** stringListListPtr, struct stringListNode* stringListToAdd)
++{
++    struct stringListListNode* currentNode = *stringListListPtr;
++
++    if (currentNode == (struct stringListListNode*)NULL)
++    {
++        currentNode = malloc(sizeof(struct stringListListNode));
++
++        assert(currentNode != (struct stringListListNode*)NULL);
++
++        currentNode->nodeContent = stringListToAdd;
++        currentNode->nextNode = (struct stringListListNode*)NULL;
++
++        *stringListListPtr = currentNode;
++    }
++    else
++    {
++        while (currentNode->nextNode != (struct stringListListNode*)NULL)
++        {
++            currentNode = currentNode->nextNode;
++        }
++
++        currentNode->nextNode = malloc(sizeof(struct stringListListNode));
++
++        assert(currentNode->nextNode != (struct stringListListNode*)NULL);
++
++        currentNode->nextNode->nodeContent = stringListToAdd;
++        currentNode->nextNode->nextNode = (struct stringListListNode*)NULL;
++    }
++}
++
++void stringListList_free(struct stringListListNode** stringListListPtr)
++{
++    if ((*stringListListPtr) != (struct stringListListNode*)NULL)
++    {
++        stringListList_free(&((*stringListListPtr)->nextNode));
++    }
++
++    free(*stringListListPtr);
++    *stringListListPtr = (struct stringListListNode*)NULL;
++}
++
++bool stringListList_hasNext(struct stringListListNode* stringListList)
++{
++    return (stringListList != (struct stringListListNode*)NULL);
++}
++
++struct stringListNode* stringListList_next(struct stringListListNode** stringListListPtr)
++{
++    struct stringListNode* result = (struct stringListNode*)NULL;
++    struct stringListListNode* list = *stringListListPtr;
++
++    if (list != (struct stringListListNode*)NULL)
++    {
++        result = list->nodeContent;
++        *stringListListPtr = list->nextNode;
++    }
++
++    return result;
++}
++
++size_t stringListList_length(struct stringListListNode* stringList)
++{
++    struct stringListListNode* currentNode = stringList;
++    size_t i = 0;
++
++    while (currentNode != (struct stringListListNode*)NULL)
++    {
++        i++;
++        currentNode = currentNode->nextNode;
++    }
++
++    return i;
++}
+\ No newline at end of file
+diff --git a/wildcard-wrapper/string_list_list.h b/wildcard-wrapper/string_list_list.h
+new file mode 100644
+index 00000000..b1f10954
+--- /dev/null
++++ b/wildcard-wrapper/string_list_list.h
+@@ -0,0 +1,24 @@
++#ifndef STRING_LIST_LIST_H
++#define STRING_LIST_LIST_H
++
++#include <assert.h>
++#include <stdlib.h>
++#include <stdbool.h>
++#include <string.h>
++
++#include "string_list.h"
++
++struct stringListListNode
++{
++    struct stringListNode* nodeContent;
++    struct stringListListNode* nextNode;
++};
++
++struct stringListListNode* stringListList_init();
++void stringListList_add(struct stringListListNode** stringListListPtr, struct stringListNode* stringListToAdd);
++void stringListList_free(struct stringListListNode** stringListListPtr);
++bool stringListList_hasNext(struct stringListListNode* stringListList);
++struct stringListNode* stringListList_next(struct stringListListNode** stringListListPtr);
++size_t stringListList_length(struct stringListListNode* stringList);
++
++#endif
+\ No newline at end of file
+diff --git a/wildcard-wrapper/utils.c b/wildcard-wrapper/utils.c
+new file mode 100644
+index 00000000..67691c95
+--- /dev/null
++++ b/wildcard-wrapper/utils.c
+@@ -0,0 +1,113 @@
++#include "utils.h"
++
++size_t min(size_t a, size_t b)
++{
++    size_t result;
++
++    if (a < b)
++    {
++        result = a;
++    }
++    else
++    {
++        result = b;
++    }
++
++    return result;
++}
++
++size_t max(size_t a, size_t b)
++{
++    size_t result;
++
++    if (a > b)
++    {
++        result = a;
++    }
++    else
++    {
++        result = b;
++    }
++
++    return result;
++}
++
++void strConcat(char* dst, char* src, size_t len)
++{
++    size_t srcLen = strnlen(src, len);
++    size_t dstLen = strnlen(dst, len);
++    size_t i = 0;
++
++    while ((i < srcLen) && ((dstLen + i) < (len - 1)))
++    {
++        dst[dstLen + i] = src[i];
++        i++;
++    }
++}
++
++void strReset(char* str, size_t len)
++{
++    size_t i;
++
++    for (i = 0; i < len; ++i)
++    {
++        str[i] = '\0';
++    }
++}
++
++void strConcatLeft(char* dst, char* src, size_t len)
++{
++    size_t srcLen = strlen(src);
++    size_t dstLen = strlen(dst);
++    size_t i = dstLen;
++
++    if (srcLen + dstLen <= len)
++    {
++        // Right shift of the begining of dst by the length of the src
++        if (i > 0)
++        {
++            do
++            {
++                dst[srcLen + i] = dst[i];
++                --i;
++            } while (i > 0);
++        }
++
++        // Replacement of the begining of dst by src
++        i = 0;
++
++        while (i < srcLen)
++        {
++            dst[i] = src[i];
++            ++i;
++        }
++    }
++}
++
++bool strIsEmpty(char* str)
++{
++    bool result;
++
++    if (str[0] == '\0')
++    {
++        result = true;
++    }
++    else
++    {
++        result = false;
++    }
++
++    return result;
++}
++
++bool strBeginsWith(char* prefix, char* str)
++{
++    size_t prefixLength = strlen(prefix);
++
++    return strncmp(prefix, str, prefixLength) == 0;
++}
++
++void printStrWithIdAndDelim(char* str, int id)
++{
++    printf("id = %d\n%s\n-------------\n", id, str);
++}
+\ No newline at end of file
+diff --git a/wildcard-wrapper/utils.h b/wildcard-wrapper/utils.h
+new file mode 100644
+index 00000000..343b7d96
+--- /dev/null
++++ b/wildcard-wrapper/utils.h
+@@ -0,0 +1,18 @@
++#ifndef UTILS_H
++#define UTILS_H
++
++#include <stdio.h>
++#include <stddef.h>
++#include <string.h>
++#include <stdbool.h>
++
++size_t min(size_t a, size_t b);
++size_t max(size_t a, size_t b);
++void strConcat(char* dst, char* src, size_t len);
++void strReset(char* str, size_t len);
++void strConcatLeft(char* dst, char* src, size_t len);
++bool strIsEmpty(char* str);
++bool strBeginsWith(char* prefix, char* str);
++void printStrWithIdAndDelim(char* str, int id);
++
++#endif
+\ No newline at end of file
+diff --git a/wildcard-wrapper/wildcard.h b/wildcard-wrapper/wildcard.h
+new file mode 100644
+index 00000000..41211fd3
+--- /dev/null
++++ b/wildcard-wrapper/wildcard.h
+@@ -0,0 +1,18 @@
++#ifndef WILDCARD_H
++#define WILDCARD_H
++
++enum wildcardBegin
++{
++    STAR,
++    STATIC_WORD
++};
++
++struct wildcard
++{
++    struct stringListNode* staticWords;
++    struct stringListListNode* starExclusions;
++    enum wildcardBegin begin;
++    __attribute__((objc_nullability("nullable"))) char* tag;
++};
++
++#endif
+\ No newline at end of file
+diff --git a/wildcard-wrapper/wildcard_list.c b/wildcard-wrapper/wildcard_list.c
+new file mode 100644
+index 00000000..5d952f12
+--- /dev/null
++++ b/wildcard-wrapper/wildcard_list.c
+@@ -0,0 +1,227 @@
++#include <stdbool.h>
++#include <assert.h>
++#include <stdlib.h>
++#include <string.h>
++
++#include "wildcard_list.h"
++#include "string_list.h"
++#include "wildcard.h"
++
++struct wildcardListCountSortContainer
++{
++    struct wildcardListNode* wildcardList;
++    int weight;
++    struct wildcardListCountSortContainer* next;
++};
++
++struct wildcardListNode* wildcardList_init()
++{
++    return (struct wildcardListNode*)NULL;
++}
++
++void wildcardList_add(struct wildcardListNode** wildcardListPtr, struct wildcard* contentToAdd)
++{
++    struct wildcardListNode* currentNode = *wildcardListPtr;
++
++    if (currentNode == (struct wildcardListNode*)NULL)
++    {
++        currentNode = malloc(sizeof(struct wildcardListNode));
++
++        assert(currentNode != (struct wildcardListNode*)NULL);
++
++        currentNode->nodeContent = contentToAdd;
++        currentNode->nextNode = (struct wildcardListNode*)NULL;
++
++        *wildcardListPtr = currentNode;
++    }
++    else
++    {
++        while (currentNode->nextNode != (struct wildcardListNode*)NULL)
++        {
++            currentNode = currentNode->nextNode;
++        }
++
++        currentNode->nextNode = malloc(sizeof(struct wildcardListNode));
++
++        assert(currentNode->nextNode != (struct wildcardListNode*)NULL);
++
++        currentNode->nextNode->nodeContent = contentToAdd;
++        currentNode->nextNode->nextNode = (struct wildcardListNode*)NULL;
++    }
++}
++
++void wildcardList_free(struct wildcardListNode** wildcardListPtr)
++{
++    if ((*wildcardListPtr) != (struct wildcardListNode*)NULL)
++    {
++        wildcardList_free(&((*wildcardListPtr)->nextNode));
++    }
++
++    free(*wildcardListPtr);
++    *wildcardListPtr = (struct wildcardListNode*)NULL;
++}
++
++bool wildcardList_hasNext(struct wildcardListNode* wildcardList)
++{
++    return (wildcardList != (struct wildcardListNode*)NULL);
++}
++
++struct wildcard* wildcardList_next(struct wildcardListNode** wildcardListPtr)
++{
++    struct wildcard* result = (struct wildcard*)NULL;
++    struct wildcardListNode* list = *wildcardListPtr;
++
++    if (list != (struct wildcardListNode*)NULL)
++    {
++        result = list->nodeContent;
++        *wildcardListPtr = list->nextNode;
++    }
++
++    return result;
++}
++
++size_t wildcardList_length(struct wildcardListNode* wildcardList)
++{
++    struct wildcardListNode* currentNode = wildcardList;
++    size_t i = 0;
++
++    while (currentNode != (struct wildcardListNode*)NULL)
++    {
++        i++;
++        currentNode = currentNode->nextNode;
++    }
++
++    return i;
++}
++
++struct wildcard* wildcardList_at(struct wildcardListNode* wildcardList, int i)
++{
++    struct wildcardListNode* currentNode = wildcardList;
++    int currentNodeIndex = 0;
++    struct wildcard* result = NULL;
++
++    while ((wildcardList_hasNext(currentNode) == true) && (currentNodeIndex < i))
++    {
++        wildcardList_next(&currentNode);
++
++        ++currentNodeIndex;
++    }
++
++    if (currentNode != NULL)
++    {
++        result = currentNode->nodeContent;
++    }
++
++    return result;
++}
++
++void wildcardListCountSortContainer_free(struct wildcardListCountSortContainer** containerToFree)
++{
++    if ((*containerToFree) != (struct wildcardListCountSortContainer*)NULL)
++    {
++        wildcardListCountSortContainer_free(&((*containerToFree)->next));
++    }
++
++    free(*containerToFree);
++    *containerToFree = (struct wildcardListCountSortContainer*)NULL;
++}
++
++void wildcardList_sortInPlaceByNumberOfStaticWords(struct wildcardListNode** wildcardListPtr)
++{
++    struct wildcardListNode* wildcardList = *wildcardListPtr;
++    struct wildcardListCountSortContainer* countSortContainer = NULL;
++    struct wildcardListCountSortContainer* previousCountSortContainer = NULL;
++    struct wildcard* currentWildcard;
++    int currentWildcardNumberOfStaticWords;
++    int maximumDepthInCountSortContainer = 0;
++    struct wildcardListCountSortContainer* currentCountSortContainer;
++    struct wildcardListNode* result = NULL;
++    struct wildcardListNode* currentWildcardListInCurrentCountSortContainer;
++    struct wildcardListNode* currentWildcardListInResult;
++
++    // Building count sort container
++    while (wildcardList_hasNext(wildcardList) == true)
++    {
++        currentWildcard = wildcardList_next(&wildcardList);
++        currentWildcardNumberOfStaticWords = stringList_length(currentWildcard->staticWords);
++
++        if (currentWildcard->begin == STAR)
++        {
++            currentWildcardNumberOfStaticWords++;
++        }
++
++        while (maximumDepthInCountSortContainer <= currentWildcardNumberOfStaticWords)
++        {
++            countSortContainer = malloc(sizeof(struct wildcardListCountSortContainer));
++
++            countSortContainer->wildcardList = wildcardList_init();
++            countSortContainer->weight = maximumDepthInCountSortContainer;
++            countSortContainer->next = previousCountSortContainer;
++
++            ++maximumDepthInCountSortContainer;
++
++            previousCountSortContainer = countSortContainer;
++        }
++
++        currentCountSortContainer = countSortContainer;
++
++        while ((currentCountSortContainer != NULL) && (currentCountSortContainer->weight != currentWildcardNumberOfStaticWords))
++        {
++            currentCountSortContainer = currentCountSortContainer->next;
++        }
++
++        wildcardList_add(&currentCountSortContainer->wildcardList, currentWildcard);
++    }
++
++    // Doing count sort
++    result = countSortContainer->wildcardList; // We take the most weighted list for the beginning of the result
++    currentWildcardListInResult = result;
++
++    if (countSortContainer->next != NULL)
++    {
++        currentCountSortContainer = countSortContainer->next;
++
++        while (currentCountSortContainer != NULL)
++        {
++            currentWildcardListInCurrentCountSortContainer = currentCountSortContainer->wildcardList;
++
++            if (currentWildcardListInCurrentCountSortContainer != NULL)
++            {
++                while (currentWildcardListInResult->nextNode != NULL)
++                {
++                    currentWildcardListInResult = currentWildcardListInResult->nextNode;
++                }
++
++                currentWildcardListInResult->nextNode = currentWildcardListInCurrentCountSortContainer;
++            }
++
++            currentCountSortContainer = currentCountSortContainer->next;
++        }
++    }
++
++    // Cleaning and returning
++    wildcardListCountSortContainer_free(&countSortContainer);
++    wildcardList_free(wildcardListPtr);
++    *wildcardListPtr = result;
++}
++
++struct wildcard* wildcardList_findWildcardByWildcardTag(struct wildcardListNode* wildcardList, char* tag)
++{
++    struct wildcard* result = (struct wildcard*)NULL;
++    bool found = false;
++    struct wildcard* currentWildcard;
++    struct wildcardListNode* wildcardListIterator = wildcardList;
++
++    while ((wildcardList_hasNext(wildcardListIterator) == true) && (found == false))
++    {
++        currentWildcard = wildcardList_next(&wildcardListIterator);
++
++        if (strcmp(currentWildcard->tag, tag) == 0)
++        {
++            found = true;
++            result = currentWildcard;
++        }
++    }
++
++    return result;
++}
+\ No newline at end of file
+diff --git a/wildcard-wrapper/wildcard_list.h b/wildcard-wrapper/wildcard_list.h
+new file mode 100644
+index 00000000..4f314f36
+--- /dev/null
++++ b/wildcard-wrapper/wildcard_list.h
+@@ -0,0 +1,25 @@
++#ifndef WILDCARD_LIST_H
++#define WILDCARD_LIST_H
++
++#include <stddef.h>
++#include <stdbool.h>
++
++#include "wildcard.h"
++
++struct wildcardListNode
++{
++    struct wildcard* nodeContent;
++    struct wildcardListNode* nextNode;
++};
++
++struct wildcardListNode* wildcardList_init();
++void wildcardList_add(struct wildcardListNode** wildcardListPtr, struct wildcard* contentToAdd);
++void wildcardList_free(struct wildcardListNode** wildcardListPtr);
++bool wildcardList_hasNext(struct wildcardListNode* wildcardList);
++struct wildcard* wildcardList_next(struct wildcardListNode** wildcardListPtr);
++size_t wildcardList_length(struct wildcardListNode* wildcardList);
++struct wildcard* wildcardList_at(struct wildcardListNode* wildcardList, int i);
++void wildcardList_sortInPlaceByNumberOfStaticWords(struct wildcardListNode** wildcardListPtr);
++struct wildcard* wildcardList_findWildcardByWildcardTag(struct wildcardListNode* wildcardList, char* tag);
++
++#endif
+\ No newline at end of file
+diff --git a/wildcard-wrapper/wrapper_internals.c b/wildcard-wrapper/wrapper_internals.c
+new file mode 100644
+index 00000000..cdb283f6
+--- /dev/null
++++ b/wildcard-wrapper/wrapper_internals.c
+@@ -0,0 +1,403 @@
++#include <stdbool.h>
++#include <stddef.h>
++#include <string.h>
++
++#include "wrapper_internals.h"
++#include "config.h"
++#include "string_list.h"
++#include "string_list_list.h"
++#include "utils.h"
++#include "wildcard.h"
++#include "wildcard_list.h"
++
++char* readWildcard(char* wildcardFileName, ssize_t (*readFunction)(int, void*, size_t))
++{
++    char* result = calloc(WILDCARD_FILE_READ_BUFFER_SIZE, sizeof(char));
++    int fdWildcardFilePath;
++
++    assert(result != (char*)NULL);
++
++    fdWildcardFilePath = open(wildcardFileName, O_RDONLY);
++
++    readFunction(fdWildcardFilePath, result, WILDCARD_FILE_READ_BUFFER_SIZE * sizeof(char));
++    close(fdWildcardFilePath);
++
++    return result;
++}
++
++struct stringListNode* parseExclusions(char* exclusionsString)   // exclusionsString : "toto,titi,tutu"
++{
++    struct stringListNode* result = stringList_init();
++    size_t exclusionsStringLength = strlen(exclusionsString) + 1;
++    char* parsedExclusionsString = malloc(exclusionsStringLength * sizeof(char));
++
++    assert(parsedExclusionsString != (char*)NULL);
++
++    strcpy(parsedExclusionsString, exclusionsString);
++
++    parsedExclusionsString = strtok(exclusionsString, ",");
++    stringList_add(&result, parsedExclusionsString);
++
++    while (parsedExclusionsString != (char*)NULL)
++    {
++        parsedExclusionsString = strtok((char*)NULL, ",");
++
++        if (parsedExclusionsString != (char*)NULL)
++        {
++            stringList_add(&result, parsedExclusionsString);
++        }
++    }
++
++    return result;
++}
++
++struct wildcard* parseWildcard(char* wildcardContent, char* wildcardTag)
++{
++    struct wildcard* result = malloc(sizeof(struct wildcard));
++    size_t wildcardContentLength;
++    struct stringListNode* currentExclusions;
++    char* strtokSavePtr;
++    char* strtokSavePtrParsingExclusions;
++    size_t tagLength;
++
++    assert(result != (struct wildcard*)NULL);
++
++    result->starExclusions = stringListList_init();
++    result->staticWords = stringList_init();
++
++    if (wildcardTag != NULL)
++    {
++        tagLength = strlen(wildcardTag) + 1;
++        result->tag = malloc(tagLength * sizeof(char));
++
++        strncpy(result->tag, wildcardTag, tagLength);
++    }
++    else
++    {
++        result->tag = NULL;
++    }
++
++    wildcardContentLength = strnlen(wildcardContent, MAX_STRING_SIZE);
++
++    if (wildcardContent[0] == '*')
++    {
++        result->begin = STAR;
++
++        wildcardContent = strtok_r(wildcardContent, "*", &strtokSavePtr);
++
++        if ((wildcardContentLength > 2) && (wildcardContent[0] == '-') && (wildcardContent[1] == '{'))
++        {
++            wildcardContent = strtok_r(wildcardContent, "}", &strtokSavePtrParsingExclusions);
++            wildcardContent += 2; // Delete "-{"
++
++            currentExclusions = parseExclusions(wildcardContent);
++            stringListList_add(&result->starExclusions, currentExclusions);
++
++            wildcardContent = strtok_r((char*)NULL, "}", &strtokSavePtrParsingExclusions);
++        }
++    }
++    else
++    {
++        result->begin = STATIC_WORD;
++
++        wildcardContent = strtok_r(wildcardContent, "*", &strtokSavePtr);
++
++        stringList_add(&result->staticWords, wildcardContent);
++
++        wildcardContent = strtok_r((char*)NULL, "*", &strtokSavePtr);
++    }
++
++    while (wildcardContent != (char*)NULL)
++    {
++        wildcardContentLength = strlen(wildcardContent);
++
++        if ((wildcardContentLength > 2) && (wildcardContent[0] == '-') && (wildcardContent[1] == '{'))
++        {
++            wildcardContent = strtok_r(wildcardContent, "}", &strtokSavePtrParsingExclusions);
++            wildcardContent += 2; // Delete "-{"
++
++            currentExclusions = parseExclusions(wildcardContent);
++            stringListList_add(&result->starExclusions, currentExclusions);
++
++            wildcardContent = strtok_r((char*)NULL, "}", &strtokSavePtrParsingExclusions);
++        }
++
++        stringList_add(&result->staticWords, wildcardContent);
++        wildcardContent = strtok_r((char*)NULL, "*", &strtokSavePtr);
++    }
++
++    return result;
++}
++
++size_t fillWildcard(char* readBuffer, size_t readBufferSize, struct wildcard* parsedWildcard, void (*actionOnExclusion)())
++{
++    static char originallyReadBuffer[MAX_STRING_SIZE * 32];
++
++    struct stringListNode* parsedWildcardStaticWordsIterator = parsedWildcard->staticWords;
++    struct stringListListNode* parsedWildcardStarExclusionsIterator = parsedWildcard->starExclusions;
++    char* nextLineInOriginallyReadBuffer;
++    char* currentWildcardKeyword = stringList_next(&parsedWildcardStaticWordsIterator);
++    struct stringListNode* currentStarExclusionIterator = stringListList_next(&parsedWildcardStarExclusionsIterator);
++    char* currentStarExclusion;
++
++    memcpy(originallyReadBuffer, readBuffer, min(readBufferSize, MAX_STRING_SIZE * 32) * sizeof(char));
++    originallyReadBuffer[readBufferSize] = '\0';
++
++    strReset(readBuffer, readBufferSize);
++
++    if (parsedWildcard->begin == STATIC_WORD)
++    {
++        strConcatLeft(readBuffer, currentWildcardKeyword, readBufferSize);
++        currentWildcardKeyword = stringList_next(&parsedWildcardStaticWordsIterator);
++    }
++
++    nextLineInOriginallyReadBuffer = strtok(originallyReadBuffer, "\n");
++
++    if (nextLineInOriginallyReadBuffer != (char*)NULL)
++    {
++        while (stringList_hasNext(currentStarExclusionIterator) == true)
++        {
++            currentStarExclusion = stringList_next(&currentStarExclusionIterator);
++
++            if ((actionOnExclusion != NULL) && (strBeginsWith(currentStarExclusion, nextLineInOriginallyReadBuffer) == true))
++            {
++                actionOnExclusion();
++            }
++        }
++
++        strConcat(readBuffer, nextLineInOriginallyReadBuffer, readBufferSize);
++        currentStarExclusionIterator = stringListList_next(&parsedWildcardStarExclusionsIterator);
++    }
++
++    while (currentWildcardKeyword != (char*)NULL)
++    {
++        nextLineInOriginallyReadBuffer = strtok((char*)NULL, "\n");
++
++        strConcat(readBuffer, currentWildcardKeyword, readBufferSize);
++        currentWildcardKeyword = stringList_next(&parsedWildcardStaticWordsIterator);
++
++        if (nextLineInOriginallyReadBuffer != (char*)NULL)
++        {
++            while (stringList_hasNext(currentStarExclusionIterator) == true)
++            {
++                currentStarExclusion = stringList_next(&currentStarExclusionIterator);
++
++                if ((actionOnExclusion != NULL) && (strBeginsWith(currentStarExclusion, nextLineInOriginallyReadBuffer) == true))
++                {
++                    actionOnExclusion();
++                }
++            }
++
++            strConcat(readBuffer, nextLineInOriginallyReadBuffer, readBufferSize);
++            currentStarExclusionIterator = stringListList_next(&parsedWildcardStarExclusionsIterator);
++        }
++    }
++
++    return strnlen(readBuffer, readBufferSize);
++}
++
++void reverseWildcard(char* wildcardedInput, char* outputBuffer, size_t outputBufferSize, struct wildcard* wildcard)
++{
++    struct stringListNode* wildcardStaticWords = wildcard->staticWords;
++    char* currentWildcardStaticWord;
++    size_t currentWildcardStaticWordLength;
++    size_t outputBufferLength = 0;
++    char* wildcardedInputCursor = wildcardedInput;
++    size_t currentInputLength;
++    bool firstRun = true;
++    bool stop = false;
++
++    outputBuffer[0] = '\0';
++
++    if (isFromThisWildcard(wildcardedInput, wildcard) == true)
++    {
++        while ((stringList_hasNext(wildcardStaticWords) == true) && (outputBufferLength < outputBufferSize) && (stop == false))
++        {
++            currentWildcardStaticWord = stringList_next(&wildcardStaticWords);
++            currentWildcardStaticWordLength = strlen(currentWildcardStaticWord);
++
++            if ((firstRun == true) && (wildcard->begin == STATIC_WORD))
++            {
++                wildcardedInputCursor += currentWildcardStaticWordLength;
++
++                firstRun = false;
++            }
++            else
++            {
++                currentInputLength = 0;
++
++                while ((strBeginsWith(currentWildcardStaticWord, wildcardedInputCursor) == false) && (currentInputLength < outputBufferSize))
++                {
++                    wildcardedInputCursor++;
++                    currentInputLength++;
++                }
++
++                if ((outputBufferLength + currentInputLength + 1) < outputBufferSize) // +1 for '\n'
++                {
++                    strncpy(outputBuffer + outputBufferLength, wildcardedInputCursor - currentInputLength, currentInputLength);
++
++                    outputBufferLength += currentInputLength + 1;
++
++                    outputBuffer[outputBufferLength - 1] = '\n';
++                }
++                else
++                {
++                    stop = true;
++                }
++
++                wildcardedInputCursor += currentWildcardStaticWordLength;
++            }
++        }
++    }
++}
++
++bool isFromThisWildcard(char* input, struct wildcard* wildcard)
++{
++    struct stringListNode* wildcardStaticWords = wildcard->staticWords;
++    bool result = true;
++    char* currentWildcardStaticWord;
++    char* inputCursor = input;
++    size_t inputLength = strlen(input);
++    size_t inputCursorPosition = 0;
++    bool matchWithCurrentStaticWord;
++    size_t currentWildcardStaticWordLength;
++    struct stringListListNode* currentStarExclusions = wildcard->starExclusions;
++    struct stringListNode* currentStarExclusion;
++
++    while ((result == true) && (inputCursorPosition < inputLength) && (stringList_hasNext(wildcardStaticWords) == true))
++    {
++        currentWildcardStaticWord = stringList_next(&wildcardStaticWords);
++        matchWithCurrentStaticWord = strBeginsWith(currentWildcardStaticWord, inputCursor);
++
++        if (stringListList_hasNext(currentStarExclusions))
++        {
++            currentStarExclusion = stringListList_next(&currentStarExclusions);
++        }
++        else
++        {
++            currentStarExclusion = NULL;
++        }
++
++        while ((result == true) && (inputCursorPosition < inputLength) && (matchWithCurrentStaticWord == false))
++        {
++            inputCursorPosition++;
++            inputCursor++;
++
++            if ((currentStarExclusion != NULL) && (currentStarExclusion->nodeContent != NULL) && (stringList_stringBeginsWithAtLeastOneStringOfThisStringList(inputCursor, currentStarExclusion) == true))
++            {
++                result = false;
++            }
++
++            if (strcmp(currentWildcardStaticWord, "\n") != 0)
++            {
++                matchWithCurrentStaticWord = strBeginsWith(currentWildcardStaticWord, inputCursor);
++            }
++        }
++
++        if (matchWithCurrentStaticWord == true)
++        {
++            currentWildcardStaticWordLength = strlen(currentWildcardStaticWord);
++
++            inputCursor += currentWildcardStaticWordLength;
++            inputCursorPosition += currentWildcardStaticWordLength;
++        }
++    }
++
++    if ((result == true) && (stringList_hasNext(wildcardStaticWords) == true)) // If there are remaining static words in the list
++    {
++        result = false;
++    }
++
++    return result;
++}
++
++struct wildcard* getAssociatedWildcard(char* wildcardedInput, struct wildcardListNode* wildcards)
++{
++    struct wildcardListNode* wildcardsList = wildcards;
++    struct wildcard* currentWildcard;
++    struct wildcard* result = NULL;
++
++    while ((wildcardList_hasNext(wildcardsList) == true) && (result == NULL))
++    {
++        currentWildcard = wildcardList_next(&wildcardsList);
++
++        if (isFromThisWildcard(wildcardedInput, currentWildcard) == true)
++        {
++            result = currentWildcard;
++        }
++    }
++
++    return result;
++}
++
++size_t lengthNeededToFillWildcard(char* input, struct wildcard* wildcard)
++{
++    size_t result = strlen(input);
++    struct stringListNode* currentWildcardStaticWordsList = wildcard->staticWords;
++    char* currentWildcardStaticWord;
++
++    while (stringList_hasNext(currentWildcardStaticWordsList) == true)
++    {
++        currentWildcardStaticWord = stringList_next(&currentWildcardStaticWordsList);
++
++        result += strlen(currentWildcardStaticWord);
++    }
++
++    return result;
++}
++
++bool stringList2WildcardWithStringExclusions(char* outputBuffer, size_t outputBufferSize, struct stringListNode* strings)
++{
++    size_t numberOfStrings = stringList_length(strings);
++    size_t neededSize = stringList_allStringsLength(strings) + (numberOfStrings - 1) + 5;
++    bool result = true;
++    char* outputBufferCursor = outputBuffer + 3;
++    struct stringListNode* currentStringListNode = strings;
++    char* currentString;
++    size_t currentStringLength;
++
++    if (neededSize > outputBufferSize)
++    {
++        result = false;
++    }
++    else
++    {
++        outputBuffer[0] = '*';
++        outputBuffer[1] = '-';
++        outputBuffer[2] = '{';
++
++        while (stringList_hasNext(currentStringListNode) == true)
++        {
++            currentString = stringList_next(&currentStringListNode);
++
++            if (currentString != (char*)NULL)
++            {
++                currentStringLength = strlen(currentString);
++
++                memcpy(outputBufferCursor, currentString, currentStringLength);
++
++                outputBufferCursor += currentStringLength;
++
++                if (stringList_hasNext(currentStringListNode) == true)
++                {
++                    *outputBufferCursor = ',';
++                    outputBufferCursor++;
++                }
++            }
++        }
++
++        outputBufferCursor[0] = '}';
++        outputBufferCursor[1] = '\0';
++    }
++
++    return result;
++}
++
++size_t getNumberOfWildcardsInWildcard(struct wildcard* wildcard)
++{
++    size_t result = 0;
++
++    result += stringListList_length(wildcard->starExclusions);
++
++    return result;
++}
+\ No newline at end of file
+diff --git a/wildcard-wrapper/wrapper_internals.h b/wildcard-wrapper/wrapper_internals.h
+new file mode 100644
+index 00000000..42fa0cfe
+--- /dev/null
++++ b/wildcard-wrapper/wrapper_internals.h
+@@ -0,0 +1,28 @@
++#ifndef WRAPPER_INTERNALS_H
++#define WRAPPER_INTERNALS_H
++
++#include <stdlib.h>
++#include <fcntl.h>
++#include <string.h>
++#include <assert.h>
++#include <unistd.h>
++#include <stddef.h>
++
++#include "config.h"
++#include "string_list.h"
++#include "utils.h"
++#include "string_list_list.h"
++#include "wildcard_list.h"
++
++char* readWildcard(char* wildcardFileName, ssize_t (*readFunction)(int, void*, size_t));
++struct stringListNode* parseExclusions(char* exclusionsString);
++struct wildcard* parseWildcard(char* wildcardContent, char* wildcardTag);
++size_t fillWildcard(char* readBuffer, size_t readBufferSize, struct wildcard* parsedWildcard, void (*actionOnExclusion)());
++void reverseWildcard(char* wildcardedInput, char* outputBuffer, size_t outputBufferSize, struct wildcard* wildcard);
++bool isFromThisWildcard(char* input, struct wildcard* wildcard);
++struct wildcard* getAssociatedWildcard(char* wildcardedInput, struct wildcardListNode* wildcards);
++size_t lengthNeededToFillWildcard(char* input, struct wildcard* wildcard);
++bool stringList2WildcardWithStringExclusions(char* outputBuffer, size_t outputBufferSize, struct stringListNode* strings);
++size_t getNumberOfWildcardsInWildcard(struct wildcard* wildcard);
++
++#endif
+\ No newline at end of file
